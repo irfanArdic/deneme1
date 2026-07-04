@@ -16,21 +16,9 @@ h1{font-size:20px;font-weight:700;color:#1a1a2e;margin-bottom:16px;}
 .s-ok{background:#c8e6c9;color:#1b5e20;}
 .s-err{background:#ffcdd2;color:#c62828;}
 .s-off{background:#f5f5f5;color:#999;}
-.acbtn{
-    width:160px;height:160px;border-radius:80px;font-size:52px;
-    border:none;color:#fff;cursor:pointer;
-    transition:background .4s,transform .15s,box-shadow .3s;
-    display:flex;align-items:center;justify-content:center;
-    margin:0 auto 14px;
-}
-.acbtn.ab-on{
-    background:linear-gradient(135deg,#00c853,#69f0ae);
-    box-shadow:0 6px 24px rgba(0,200,83,.4);
-}
-.acbtn.ab-off{
-    background:linear-gradient(135deg,#9e9e9e,#bdbdbd);
-    box-shadow:none;
-}
+.acbtn{width:160px;height:160px;border-radius:80px;font-size:52px;border:none;color:#fff;cursor:pointer;transition:background .4s,transform .15s,box-shadow .3s;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;}
+.acbtn.ab-on{background:linear-gradient(135deg,#00c853,#69f0ae);box-shadow:0 6px 24px rgba(0,200,83,.4);}
+.acbtn.ab-off{background:linear-gradient(135deg,#9e9e9e,#bdbdbd);box-shadow:none;}
 .acbtn:active{transform:scale(.93);}
 .acbtn:disabled{cursor:not-allowed;}
 .kayit-box{background:#fff;border-radius:22px;padding:28px 24px;max-width:340px;width:100%;}
@@ -52,7 +40,6 @@ h1{font-size:20px;font-weight:700;color:#1a1a2e;margin-bottom:16px;}
 .msg.err{background:#ffcdd2;color:#c62828;}
 .msg.ok{background:#c8e6c9;color:#2e7d32;}
 .yardim-link{display:inline-block;margin-top:14px;font-size:12px;color:#667eea;text-decoration:none;font-weight:700;border-bottom:1px dashed #667eea;padding-bottom:1px;}
-.yardim-link:active{opacity:.7;}
 .err-page{background:#fff;border-radius:22px;padding:28px 24px;max-width:320px;width:100%;text-align:center;}
 .err-page h2{font-size:18px;color:#c62828;margin:12px 0 8px;}
 .err-page p{font-size:14px;color:#666;line-height:1.6;}
@@ -60,7 +47,6 @@ h1{font-size:20px;font-weight:700;color:#1a1a2e;margin-bottom:16px;}
 </head>
 <body>
 <div id="root"><div style="color:#fff;text-align:center;padding:40px;">Yukleniyor...</div></div>
-
 <script>
 // ================================================================
 // YAPILANDIRMA
@@ -72,16 +58,13 @@ var KOMUT_TOPIC     = 'esp8266/kapi/komut';
 var KAYIT_TOPIC     = 'esp8266/kapi/kayit';
 var YANIT_PFX       = 'esp8266/kapi/yanit/';
 var KAYIT_YANIT     = 'esp8266/kapi/kayit/yanit/';
-
-// LWT/Retain durum topic'i — ESP bagliyken broker "online" saklar,
-// ESP koparsa broker "offline" yazar. Web abone olunca ANINDA alir.
 var DURUM_TOPIC     = 'esp8266/kapi/durum';
 
-// Yardim linki — tasarimci bu satiri degistirerek gunceller
-var YARDIM_LINK_KULLANICI = 'https://irfanardic.github.io/deneme1/yardim-kullanici.html';
+// Yardim linki — bu satiri degistirerek guncellenir
+var YARDIM_LINK     = 'https://irfanardic.github.io/deneme1/yardim.html';
 
 // ================================================================
-// KÜTÜPHANE YÜKLEME — sira onemli: mqtt → motor.js → uygulama
+// KÜTÜPHANE YÜKLEME
 // ================================================================
 var s1 = document.createElement('script');
 s1.src = 'https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js';
@@ -89,13 +72,13 @@ s1.onload = function(){
     var s2 = document.createElement('script');
     s2.src = 'motor.js';
     s2.onload  = function(){ baslat(); };
-    s2.onerror = function(){ baslat(); }; // motor.js olmasa da devam et
+    s2.onerror = function(){ baslat(); };
     document.head.appendChild(s2);
 };
 s1.onerror = function(){
     document.getElementById('root').innerHTML =
-        '<div class="box"><div class="logo">&#128683;</div>' +
-        '<h1>Baglanti kurulamadi</h1>' +
+        '<div class="box"><div class="logo">&#128683;</div>'+
+        '<h1>Baglanti kurulamadi</h1>'+
         '<p style="color:#888;font-size:13px;">Internet baglantinizi kontrol edin.</p></div>';
 };
 document.head.appendChild(s1);
@@ -108,12 +91,19 @@ function R(id){ return document.getElementById(id); }
 function getDid(){
     var d = localStorage.getItem('did');
     if(!d){
-        d = 'xxxxxxxxxxxx'.replace(/x/g,function(){
-            return (Math.random()*16|0).toString(16);
-        });
+        d = 'xxxxxxxxxxxx'.replace(/x/g,function(){ return (Math.random()*16|0).toString(16); });
         localStorage.setItem('did',d);
     }
     return d;
+}
+
+// Bu cihazda kayitli secret var mi?
+function kayitliSecretBul(){
+    for(var i=0;i<200;i++){
+        var s = localStorage.getItem('kapi_secret_'+i);
+        if(s) return {slot:i, secret:s};
+    }
+    return null;
 }
 
 function gP(k){ return new URLSearchParams(window.location.search).get(k)||''; }
@@ -126,52 +116,49 @@ function esc(s){
 }
 
 // ----------------------------------------------------------------
-// SES — Web Audio API ile kapi acilinca kisa onay sesi
+// SES — Web Audio API ile kapi acilinca onay sesi
 // ----------------------------------------------------------------
 function kapiAcildiSesi(){
     try{
-        var ctx = new (window.AudioContext||window.webkitAudioContext)();
-        function ton(frekans, baslangic, sure){
-            var osc  = ctx.createOscillator();
-            var gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(frekans, ctx.currentTime+baslangic);
-            gain.gain.setValueAtTime(0.0, ctx.currentTime+baslangic);
-            gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime+baslangic+0.01);
-            gain.gain.linearRampToValueAtTime(0.0, ctx.currentTime+baslangic+sure);
+        var ctx = new(window.AudioContext||window.webkitAudioContext)();
+        function ton(frekans,baslangic,sure){
+            var osc=ctx.createOscillator(), gain=ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.type='sine';
+            osc.frequency.setValueAtTime(frekans,ctx.currentTime+baslangic);
+            gain.gain.setValueAtTime(0,ctx.currentTime+baslangic);
+            gain.gain.linearRampToValueAtTime(0.4,ctx.currentTime+baslangic+0.01);
+            gain.gain.linearRampToValueAtTime(0,ctx.currentTime+baslangic+sure);
             osc.start(ctx.currentTime+baslangic);
             osc.stop(ctx.currentTime+baslangic+sure+0.05);
         }
-        ton(880,  0.0, 0.15); // La5
-        ton(1320, 0.2, 0.2);  // Mi6
-        setTimeout(function(){ try{ ctx.close(); }catch(e){} }, 1000);
-    } catch(e){}
+        ton(880, 0.0, 0.15);
+        ton(1320,0.2, 0.2);
+        setTimeout(function(){ try{ctx.close();}catch(e){} },1000);
+    }catch(e){}
 }
 
 // ================================================================
-// PAYLAŞILAN MQTT BAĞLANTISI
+// MQTT
 // ================================================================
 var _mqCl = null;
 var _conn = false;
 
 function mqttBaglan(onHazir){
-    if(_mqCl && _conn){ if(onHazir) onHazir(); return; }
+    if(_mqCl&&_conn){ if(onHazir) onHazir(); return; }
     if(_mqCl){ try{_mqCl.end(true);}catch(e){} _mqCl=null; _conn=false; }
-
     _mqCl = mqtt.connect(MQTT_URL,{
-        clientId       : 'web_'+Math.random().toString(36).substring(2,12),
-        username       : MQTT_USER,
-        password       : MQTT_PASS,
+        clientId  : 'web_'+Math.random().toString(36).substring(2,12),
+        username  : MQTT_USER,
+        password  : MQTT_PASS,
         reconnectPeriod: 4000,
         connectTimeout : 15000,
-        keepalive      : 30,
-        clean          : true
+        keepalive : 30,
+        clean     : true
     });
-    _mqCl.on('connect', function(){ _conn=true; if(onHazir) onHazir(); });
-    _mqCl.on('error',   function(){ _conn=false; });
-    _mqCl.on('close',   function(){ _conn=false; });
+    _mqCl.on('connect',function(){ _conn=true; if(onHazir) onHazir(); });
+    _mqCl.on('error',  function(){ _conn=false; });
+    _mqCl.on('close',  function(){ _conn=false; });
 }
 
 // ================================================================
@@ -184,7 +171,21 @@ function baslat(){
     var SLOT_INT = parseInt(SLOT,10);
 
     if(INV_LINK.length===16){
-        renderKayit(INV_LINK);
+        // ----------------------------------------------------------------
+        // KAYIT LİNKİ — önce bu cihazda kayıt var mı kontrol et
+        // Varsa direkt buton sayfasına gec (kayıt formunu gösterme)
+        // ----------------------------------------------------------------
+        var mevcut = kayitliSecretBul();
+        if(mevcut){
+            // Bu cihaz zaten kayıtlı — direkt butona git
+            renderButon(mevcut.slot, mevcut.secret);
+        } else {
+            // Henüz kayıt yok — kayıt formu göster
+            // Ama önce: bu link zaten başka bir cihazda kayıtlı mı?
+            // Bunu ESP'den öğrenemeyiz (MQTT async), dolayısıyla
+            // kayıt denemesinde ESP reddederse hata mesajı gelir.
+            renderKayit(INV_LINK);
+        }
     } else if(SLOT.length>0 && SECRET.length>0 && !isNaN(SLOT_INT)){
         renderButon(SLOT_INT, SECRET);
     } else {
@@ -215,6 +216,31 @@ function renderHata(msg){
 }
 
 // ================================================================
+// DAVETIYE HATASI — başkasına ait / geçersiz link
+// ================================================================
+function renderDavetiyeHatasi(msg){
+    R('root').innerHTML =
+        '<div class="box">'+
+        '<div class="logo">&#9888;&#65039;</div>'+
+        '<h1 style="color:#e65100;">Gecersiz Davetiye</h1>'+
+        '<p style="font-size:14px;color:#666;line-height:1.6;margin-top:8px;">'+esc(msg)+'</p>'+
+        '<p style="font-size:12px;color:#aaa;margin-top:14px;" id="kapanma">Bu sayfa 5 saniye sonra kapanacak.</p>'+
+        '</div>';
+    // 5 saniye geri sayım
+    var kalan = 5;
+    var timer = setInterval(function(){
+        kalan--;
+        var el = R('kapanma');
+        if(el) el.textContent = 'Bu sayfa '+kalan+' saniye sonra kapanacak.';
+        if(kalan<=0){
+            clearInterval(timer);
+            // Sayfayı temizle ve boş bırak
+            document.body.innerHTML = '<div style="color:#fff;text-align:center;padding:40px;font-family:Arial;font-size:14px;">Sayfa kapatildi.</div>';
+        }
+    },1000);
+}
+
+// ================================================================
 // KAYIT SAYFASI
 // ================================================================
 function renderKayit(invLink){
@@ -241,7 +267,7 @@ function renderKayit(invLink){
             '</div>'+
         '</div>'+
         '<button class="gbtn" id="kayitBtn" onclick="kayitGonder()">&#9989; Kayit Ol</button>'+
-        '<a class="yardim-link" href="'+YARDIM_LINK_KULLANICI+'" target="_blank">&#10067; Nasil kayit olurum?</a>'+
+        '<a class="yardim-link" href="'+YARDIM_LINK+'" target="_blank">&#10067; Nasil kayit olurum?</a>'+
         '</div>';
 
     R('kod').focus();
@@ -260,7 +286,7 @@ function renderKayit(invLink){
 
         if(kod.length!==6||isNaN(Number(kod))){ showMsg('6 haneli sayisal kod girin!',true); return; }
         if(ad.length<2){ showMsg('Ad soyad girin!',true); return; }
-        if(tel.length<10){ showMsg('10 haneli numara girin (5xx xxx xx xx)',true); return; }
+        if(tel.length<10){ showMsg('10 haneli numara girin',true); return; }
 
         var btn = R('kayitBtn');
         if(btn) btn.disabled=true;
@@ -287,7 +313,7 @@ function renderKayit(invLink){
                     if(topic!==yanit_topic) return;
                     if(zaman_asimi) clearTimeout(zaman_asimi);
                     try{
-                        var d=JSON.parse(payload.toString());
+                        var d = JSON.parse(payload.toString());
                         if(d.ok){
                             localStorage.setItem('kapi_secret_'+d.slot,d.secret);
                             showMsg('Kayit basarili! Yonlendiriliyorsunuz...',false);
@@ -297,11 +323,19 @@ function renderKayit(invLink){
                                     '?s='+d.slot+'&k='+encodeURIComponent(d.secret);
                             },1500);
                         } else {
-                            showMsg(d.mesaj||'Kayit hatasi!',true);
-                            if(btn) btn.disabled=false;
+                            // ----------------------------------------
+                            // ESP "Gecersiz davetiye" dedi —
+                            // bu link baska cihazda kayıtlı olabilir
+                            // ----------------------------------------
+                            if(d.mesaj && d.mesaj.indexOf('Gecersiz')>=0){
+                                renderDavetiyeHatasi('Bu davetiye baska bir cihaza aittir. Kendi davetiyenizi kullanin.');
+                            } else {
+                                showMsg(d.mesaj||'Kayit hatasi!',true);
+                                if(btn) btn.disabled=false;
+                            }
                             _mqCl.removeListener('message',yanit_dinle);
                         }
-                    } catch(e){
+                    }catch(e){
                         showMsg('Beklenmeyen yanit, tekrar deneyin.',true);
                         if(btn) btn.disabled=false;
                         _mqCl.removeListener('message',yanit_dinle);
@@ -322,13 +356,13 @@ function renderKayit(invLink){
 // ================================================================
 // BUTON SAYFASI
 // ================================================================
-var _yanit  = '';
-var _did    = '';
-var _sec    = '';
-var _slot   = 0;
-var _espOnline = false; // LWT/retain ile belirlenir
+var _yanit     = '';
+var _did       = '';
+var _sec       = '';
+var _slot      = 0;
+var _espOnline = false;
 
-function renderButon(slotInt, secret){
+function renderButon(slotInt,secret){
     _did   = getDid();
     _sec   = secret||localStorage.getItem('kapi_secret_'+slotInt)||'';
     _slot  = slotInt;
@@ -339,7 +373,7 @@ function renderButon(slotInt, secret){
         return;
     }
 
-    // On filtre (motor.js — obfuscated)
+    // On filtre (motor.js)
     if(typeof window.__kd==='function'){
         if(!window.__kd(_did,_sec,_slot)){
             renderHata('Bu baglanti bu cihaza ait degil.');
@@ -374,33 +408,32 @@ function btnOn(ok){
 
 function mqttBaglanButon(){
     setStat('s-wait','&#9203; Baglaniyor...');
-    _espOnline = false;
+    _espOnline=false;
 
     mqttBaglan(function(){
-        // 1. Kapi acilma yanit topic'ine abone ol
-        _mqCl.subscribe(_yanit,{qos:0});
-
-        // 2. LWT/Retain durum topic'ine abone ol
-        // Broker, ESP'nin SON BILINEN durumunu ANINDA gonderir —
-        // ESP'ye ayri sorgu gondermeye GEREK YOK.
+        _mqCl.subscribe(_yanit,   {qos:0});
         _mqCl.subscribe(DURUM_TOPIC,{qos:1},function(err){
             if(err){
                 setStat('s-err','&#10060; Baglanti kurulamadi');
+                return;
             }
-            // Abone olduk, retained mesaj gelecek (veya gelmeyecek — timeout yok,
-            // gelirse online, gelmezse ESP hic baglananmamis demektir)
-            setStat('s-wait','&#9203; Sistem bekleniyor...');
+            // Broker'a abone olduk — retained mesaj otomatik gelecek.
+            // Eger 6 saniye icinde gelmezse ESP offline demektir.
+            setTimeout(function(){
+                if(!_espOnline){
+                    setStat('s-err','&#10060; Sistem su an cevrimdisi');
+                    btnOn(false);
+                }
+            },6000);
         });
 
         _mqCl.on('message',function(topic,payload){
-
-            // --- LWT/Retain durum mesaji ---
+            // --- LWT/Retained durum mesaji ---
             if(topic===DURUM_TOPIC){
                 try{
                     var d=JSON.parse(payload.toString());
                     if(d.durum==='online'){
                         _espOnline=true;
-                        // Sistem adi varsa guncelle
                         if(d.sid){
                             var t=R('sysTitle');
                             if(t) t.textContent=d.sid;
@@ -408,12 +441,11 @@ function mqttBaglanButon(){
                         setStat('s-conn','&#9989; Hazir — Butona basin');
                         btnOn(true);
                     } else {
-                        // "offline" — ESP bagli degil
                         _espOnline=false;
                         setStat('s-err','&#10060; Sistem su an cevrimdisi');
                         btnOn(false);
                     }
-                } catch(e){}
+                }catch(e){}
                 return;
             }
 
@@ -422,7 +454,7 @@ function mqttBaglanButon(){
                 try{
                     var d2=JSON.parse(payload.toString());
                     if(d2.komut==='kapi_acildi'){
-                        kapiAcildiSesi(); // Web Audio API ile onay sesi
+                        kapiAcildiSesi();
                         setStat('s-ok','&#9989; Kapi Acildi!');
                         R('acBtn').innerHTML='&#9989;';
                         setTimeout(function(){
@@ -434,24 +466,19 @@ function mqttBaglanButon(){
                         setStat('s-err','&#10060; Islem tamamlanamadi');
                         btnOn(true);
                     }
-                } catch(e){}
+                }catch(e){}
             }
         });
 
-        // --- Broker baglantisi kopunca ---
         _mqCl.on('close',function(){
-            _conn=false;
-            _espOnline=false;
+            _conn=false; _espOnline=false;
             setStat('s-off','&#9203; Baglanti bekleniyor...');
             btnOn(false);
         });
-
-        // --- Broker yeniden baglaninca retained mesaj otomatik gelir ---
         _mqCl.on('reconnect',function(){
             setStat('s-wait','&#9203; Yeniden baglaniyor...');
             btnOn(false);
         });
-
         _mqCl.on('error',function(){
             _espOnline=false;
             setStat('s-err','&#10060; Baglanti sorunu');
