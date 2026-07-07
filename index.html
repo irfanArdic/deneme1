@@ -43,6 +43,14 @@ h1{font-size:20px;font-weight:700;color:#1a1a2e;margin-bottom:16px;}
 .err-page{background:#fff;border-radius:22px;padding:28px 24px;max-width:320px;width:100%;text-align:center;}
 .err-page h2{font-size:18px;color:#c62828;margin:12px 0 8px;}
 .err-page p{font-size:14px;color:#666;line-height:1.6;}
+/* Sistem gezgini navigasyonu */
+body{transition:background 0.5s ease;}
+.nav-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.nav-btn{background:#f0f0f0;border:none;width:34px;height:34px;border-radius:50%;font-size:14px;color:#667eea;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.nav-btn:active{background:#e0e0e0;}
+.nav-dots{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;flex:1;}
+.nav-dot{width:8px;height:8px;border-radius:50%;background:#ddd;transition:background .2s,transform .2s;}
+.nav-dot.active{background:#667eea;transform:scale(1.3);}
 </style>
 </head>
 <body>
@@ -108,6 +116,62 @@ function getDid(){
 
 function gP(k){ return new URLSearchParams(window.location.search).get(k)||''; }
 
+// ----------------------------------------------------------------
+// localStorage ANAHTAR YAPISI: <alan>_<chipId>_<slot>
+// Farklı sistemlerin ayni slot numarasini kullanmasi durumunda
+// cakismayi onler.
+// ----------------------------------------------------------------
+function lsKey(alan,chipId,slot){ return 'kapi_'+alan+'_'+chipId+'_'+slot; }
+
+function sistemKaydet(chipId,slot,secret,sid){
+    localStorage.setItem(lsKey('secret',chipId,slot),secret);
+    localStorage.setItem(lsKey('sid',chipId,slot),sid||'Kapi Sistemi');
+    // Sistem listesine de ekle (tekrarsız)
+    var liste=sistemListesiOku();
+    var varMi=liste.some(function(s){ return s.chipId===chipId&&s.slot===slot; });
+    if(!varMi){
+        liste.push({chipId:chipId,slot:slot});
+        localStorage.setItem('kapi_sistem_listesi',JSON.stringify(liste));
+    }
+}
+
+function sistemListesiOku(){
+    try{
+        var raw=localStorage.getItem('kapi_sistem_listesi');
+        return raw?JSON.parse(raw):[];
+    }catch(e){ return []; }
+}
+
+// Kayıtlı tüm sistemlerin güncel bilgisini (secret+sid) toplar
+function tumSistemleriGetir(){
+    var liste=sistemListesiOku();
+    var sonuc=[];
+    for(var i=0;i<liste.length;i++){
+        var s=liste[i];
+        var secret=localStorage.getItem(lsKey('secret',s.chipId,s.slot));
+        var sid   =localStorage.getItem(lsKey('sid',s.chipId,s.slot))||'Kapi Sistemi';
+        if(secret) sonuc.push({chipId:s.chipId,slot:s.slot,secret:secret,sid:sid});
+    }
+    return sonuc;
+}
+
+// ----------------------------------------------------------------
+// Sistem adından deterministik hex renk üret.
+// Aynı isim her zaman aynı rengi verir — kullanıcı görsel olarak
+// hangi sistemde olduğunu ayırt edebilir, yanlış kapıya basma riski azalır.
+// ----------------------------------------------------------------
+function sidRenkUret(sid){
+    var hash=0;
+    for(var i=0;i<sid.length;i++){
+        hash=sid.charCodeAt(i)+((hash<<5)-hash);
+        hash=hash&hash; // 32-bit'e sabitle
+    }
+    var h=Math.abs(hash)%360; // hue 0-359
+    var renk1='hsl('+h+',55%,22%)';
+    var renk2='hsl('+((h+40)%360)+',60%,14%)';
+    return 'linear-gradient(135deg,'+renk1+','+renk2+')';
+}
+
 function esc(s){
     if(!s) return '';
     return String(s).replace(/[&<>"]/g,function(c){
@@ -172,15 +236,26 @@ function baslat(){
     if(INV_LINK.length===16){
         renderKayit(INV_LINK);
     } else if(SLOT.length>0&&SECRET.length>0&&!isNaN(SLOT_INT)){
-        // chipId URL'den veya localStorage'dan al
-        var chipId=gP('c')||localStorage.getItem('kapi_chip_'+SLOT_INT)||'';
+        var chipId=gP('c')||'';
         if(!chipId){
             renderHata('Sistem bilgisi eksik. Lutfen davetiye linkinizi tekrar kullanin.');
             return;
         }
-        renderButon(SLOT_INT,SECRET,chipId);
+        // URL'den gelen sistem localStorage listesine dahil mi kontrol et,
+        // değilse ekle (link direkt açılmışsa da liste güncel kalsın)
+        var mevcutSecret=localStorage.getItem(lsKey('secret',chipId,SLOT_INT));
+        if(!mevcutSecret){
+            sistemKaydet(chipId,SLOT_INT,SECRET,localStorage.getItem(lsKey('sid',chipId,SLOT_INT))||'Kapi Sistemi');
+        }
+        renderSistemGezgini(chipId,SLOT_INT);
     } else {
-        renderTest();
+        // Parametre yoksa: localStorage'da kayıtlı sistem var mı bak
+        var kayitliSistemler=tumSistemleriGetir();
+        if(kayitliSistemler.length>0){
+            renderSistemGezgini(kayitliSistemler[0].chipId,kayitliSistemler[0].slot);
+        } else {
+            renderTest();
+        }
     }
 }
 
@@ -342,10 +417,8 @@ function renderKayit(invLink){
                 try{
                     var d=JSON.parse(payload.toString());
                     if(d.ok){
-                        // Kayit basarili — chipId'yi de sakla
-                        localStorage.setItem('kapi_secret_'+d.slot,d.secret);
-                        localStorage.setItem('kapi_chip_'+d.slot,chipId);
-                        localStorage.setItem('kapi_sid_'+d.slot,d.sid||'Kapi Sistemi');
+                        // Kayit basarili — yeni yapiya gore kaydet
+                        sistemKaydet(chipId,d.slot,d.secret,d.sid||'Kapi Sistemi');
                         showMsg('Kayit basarili! Yonlendiriliyorsunuz...',false);
                         setTimeout(function(){
                             window.location.href=
@@ -381,44 +454,109 @@ function renderKayit(invLink){
 }
 
 // ================================================================
-// BUTON SAYFASI
+// SİSTEM GEZGİNİ — çoklu kayıtlı sistem arasında swipe/ok navigasyonu
 // ================================================================
-var _yanit='', _did='', _sec='', _slot=0, _chipId='', _T=null;
-var _espOnline=false;
+var _sistemler   = [];  // {chipId,slot,secret,sid}
+var _aktifIndex  = 0;
+var _did='', _yanit='', _T=null, _espOnline=false;
 
-function renderButon(slotInt,secret,chipId){
-    _did    =getDid();
-    _sec    =secret||localStorage.getItem('kapi_secret_'+slotInt)||'';
-    _slot   =slotInt;
-    _chipId =chipId;
-    _T      =topics(chipId);
-    _yanit  =_T.yanitPfx+_did;
+// Dokunma/swipe takibi
+var _touchStartX=0, _touchEndX=0;
 
-    if(!_sec){
-        renderHata('Bu baglanti gecerli degil. Lutfen yeniden davetiye isteyin.');
+function renderSistemGezgini(baslangicChipId,baslangicSlot){
+    _did = getDid();
+    _sistemler = tumSistemleriGetir();
+
+    if(_sistemler.length===0){
+        renderHata('Kayitli sistem bulunamadi. Lutfen davetiye linkinizi kullanin.');
         return;
     }
 
-    // On filtre (motor.js)
-    if(typeof window.__kd==='function'){
-        if(!window.__kd(_did,_sec,_slot)){
-            renderHata('Bu baglanti bu cihaza ait degil.');
-            return;
+    // Başlangıç indexini bul
+    _aktifIndex = 0;
+    for(var i=0;i<_sistemler.length;i++){
+        if(_sistemler[i].chipId===baslangicChipId&&_sistemler[i].slot===baslangicSlot){
+            _aktifIndex=i; break;
         }
     }
 
-    // Sistem adi - localStorage'dan veya durum topic'ten gelecek
-    var sid=localStorage.getItem('kapi_sid_'+slotInt)||'Kapi Sistemi';
+    ciziGezgini();
+    sistemeGec(_aktifIndex);
+}
 
-    R('root').innerHTML=
-        '<div class="box">'+
+function ciziGezgini(){
+    var cokluMu = _sistemler.length>1;
+
+    var html =
+        '<div class="box" id="sysBox">'+
+        (cokluMu ? '<div class="nav-row">'+
+            '<button class="nav-btn" id="navPrev" onclick="onceki()">&#10094;</button>'+
+            '<div class="nav-dots" id="navDots"></div>'+
+            '<button class="nav-btn" id="navNext" onclick="sonraki()">&#10095;</button>'+
+        '</div>' : '')+
         '<div class="logo">&#128682;</div>'+
-        '<h1 id="sysTitle">'+esc(sid)+'</h1>'+
+        '<h1 id="sysTitle">Yukleniyor...</h1>'+
         '<div class="status s-wait" id="statBox">&#9203; Baglaniyor...</div>'+
         '<button class="acbtn ab-off" id="acBtn" onclick="kapiAc()" disabled>&#128275;</button>'+
         '</div>';
 
-    mqttBaglanButon();
+    R('root').innerHTML = html;
+
+    if(cokluMu){
+        var dotsEl = R('navDots');
+        var dotsHtml = '';
+        for(var i=0;i<_sistemler.length;i++){
+            dotsHtml += '<span class="nav-dot'+(i===_aktifIndex?' active':'')+'" data-idx="'+i+'"></span>';
+        }
+        dotsEl.innerHTML = dotsHtml;
+
+        // Swipe olayları
+        var box = R('sysBox');
+        box.addEventListener('touchstart',function(e){ _touchStartX=e.changedTouches[0].screenX; },{passive:true});
+        box.addEventListener('touchend',function(e){
+            _touchEndX=e.changedTouches[0].screenX;
+            var fark=_touchEndX-_touchStartX;
+            if(Math.abs(fark)>50){
+                if(fark<0) sonraki(); else onceki();
+            }
+        },{passive:true});
+    }
+}
+
+function onceki(){
+    if(_sistemler.length<=1) return;
+    _aktifIndex = (_aktifIndex-1+_sistemler.length)%_sistemler.length;
+    sistemeGec(_aktifIndex);
+}
+function sonraki(){
+    if(_sistemler.length<=1) return;
+    _aktifIndex = (_aktifIndex+1)%_sistemler.length;
+    sistemeGec(_aktifIndex);
+}
+
+function sistemeGec(idx){
+    var s = _sistemler[idx];
+    if(!s) return;
+
+    _T     = topics(s.chipId);
+    _yanit = _T.yanitPfx+_did;
+    _espOnline = false;
+
+    // Arka plan rengini sistem adından türet
+    document.body.style.background = sidRenkUret(s.sid);
+
+    var t = R('sysTitle');
+    if(t) t.textContent = s.sid;
+
+    // Nokta göstergesini güncelle
+    var dots = document.querySelectorAll('.nav-dot');
+    dots.forEach(function(d,i){ d.classList.toggle('active', i===idx); });
+
+    setStat('s-wait','&#9203; Baglaniyor...');
+    btnOn(false);
+
+    // Bu sistem için MQTT bağlantısını (yeniden) kur
+    mqttBaglanButon(s);
 }
 
 function setStat(cls,html){
@@ -430,16 +568,17 @@ function btnOn(ok){
     if(b){ b.disabled=!ok; b.classList.toggle('ab-on',ok); b.classList.toggle('ab-off',!ok); }
 }
 
-function mqttBaglanButon(){
-    setStat('s-wait','&#9203; Baglaniyor...');
-    _espOnline=false;
+// Her sistem geçişinde eski mesaj dinleyicisini temizlemek için referans tutuyoruz
+var _mesajDinleyici = null;
 
+function mqttBaglanButon(sistem){
     mqttBaglan(function(){
-        // Chip ID'ye özel topic'lere abone ol
-        _mqCl.subscribe(_yanit,    {qos:0});
-        _mqCl.subscribe(_T.durum,  {qos:1},function(err){
+        // Önceki sistemin mesaj dinleyicisini kaldır (varsa)
+        if(_mesajDinleyici){ _mqCl.removeListener('message',_mesajDinleyici); }
+
+        _mqCl.subscribe(_yanit,   {qos:0});
+        _mqCl.subscribe(_T.durum, {qos:1},function(err){
             if(err){ setStat('s-err','&#10060; Baglanti kurulamadi'); return; }
-            // Retained mesaj gelecek — 6sn içinde gelmezse offline
             setTimeout(function(){
                 if(!_espOnline){
                     setStat('s-err','&#10060; Sistem su an cevrimdisi');
@@ -448,8 +587,7 @@ function mqttBaglanButon(){
             },6000);
         });
 
-        _mqCl.on('message',function(topic,payload){
-            // LWT/Retain durum mesaji
+        _mesajDinleyici = function(topic,payload){
             if(topic===_T.durum){
                 try{
                     var d=JSON.parse(payload.toString());
@@ -457,7 +595,14 @@ function mqttBaglanButon(){
                         _espOnline=true;
                         if(d.sid){
                             var t=R('sysTitle');
-                            if(t){ t.textContent=d.sid; localStorage.setItem('kapi_sid_'+_slot,d.sid); }
+                            if(t) t.textContent=d.sid;
+                            // sid güncel değilse localStorage'ı tazele
+                            var s=_sistemler[_aktifIndex];
+                            if(s&&s.sid!==d.sid){
+                                s.sid=d.sid;
+                                localStorage.setItem(lsKey('sid',s.chipId,s.slot),d.sid);
+                                document.body.style.background = sidRenkUret(d.sid);
+                            }
                         }
                         setStat('s-conn','&#9989; Hazir — Butona basin');
                         btnOn(true);
@@ -470,7 +615,6 @@ function mqttBaglanButon(){
                 return;
             }
 
-            // Kapi acilma yaniti
             if(topic===_yanit){
                 try{
                     var d2=JSON.parse(payload.toString());
@@ -489,7 +633,9 @@ function mqttBaglanButon(){
                     }
                 }catch(e){}
             }
-        });
+        };
+
+        _mqCl.on('message',_mesajDinleyici);
 
         _mqCl.on('close',function(){
             _conn=false; _espOnline=false;
@@ -509,14 +655,15 @@ function mqttBaglanButon(){
 }
 
 function kapiAc(){
-    if(!_mqCl||!_conn||!_espOnline){
+    var s = _sistemler[_aktifIndex];
+    if(!s||!_mqCl||!_conn||!_espOnline){
         setStat('s-err','&#10060; Sistem hazir degil');
         return;
     }
     setStat('s-wait','&#9203; Gonderiliyor...');
     btnOn(false);
 
-    var paket=JSON.stringify({k:_sec,s:_slot,d:_did});
+    var paket=JSON.stringify({k:s.secret,s:s.slot,d:_did});
     _mqCl.publish(_T.komut,paket,{qos:1},function(err){
         if(err){ setStat('s-err','&#10060; Gonderim hatasi!'); btnOn(true); }
     });
