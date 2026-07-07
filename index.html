@@ -51,32 +51,41 @@ h1{font-size:20px;font-weight:700;color:#1a1a2e;margin-bottom:16px;}
 // ================================================================
 // YAPILANDIRMA
 // ================================================================
-var MQTT_URL        = 'wss://49de32fbb15f4b4ead7a5919fb255492.s1.eu.hivemq.cloud:8884/mqtt';
-var MQTT_USER       = 'ESP8266_buton';
-var MQTT_PASS       = 'EDCrfv01';
-var KOMUT_TOPIC     = 'esp8266/kapi/komut';
-var KAYIT_TOPIC     = 'esp8266/kapi/kayit';
-var YANIT_PFX       = 'esp8266/kapi/yanit/';
-var KAYIT_YANIT     = 'esp8266/kapi/kayit/yanit/';
-var DURUM_TOPIC     = 'esp8266/kapi/durum';
+var MQTT_URL    = 'wss://49de32fbb15f4b4ead7a5919fb255492.s1.eu.hivemq.cloud:8884/mqtt';
+var MQTT_USER   = 'ESP8266_buton';
+var MQTT_PASS   = 'EDCrfv01';
 
 // Yardim linki — bu satiri degistirerek guncellenir
-var YARDIM_LINK     = 'https://irfanardic.github.io/deneme1/yardim.html';
+var YARDIM_LINK = 'https://irfanardic.github.io/deneme1/yardim.html';
+
+// ================================================================
+// TOPIC YARDIMCISI — chipId ile izole topic'ler
+// ================================================================
+function topics(chipId){
+    var p='esp8266/kapi/'+chipId+'/';
+    return {
+        komut     : p+'komut',
+        kayit     : p+'kayit',
+        yanitPfx  : p+'yanit/',
+        kayitYanit: p+'kayit/yanit/',
+        durum     : p+'durum'
+    };
+}
 
 // ================================================================
 // KÜTÜPHANE YÜKLEME
 // ================================================================
-var s1 = document.createElement('script');
-s1.src = 'https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js';
-s1.onload = function(){
-    var s2 = document.createElement('script');
-    s2.src = 'motor.js';
-    s2.onload  = function(){ baslat(); };
-    s2.onerror = function(){ baslat(); };
+var s1=document.createElement('script');
+s1.src='https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js';
+s1.onload=function(){
+    var s2=document.createElement('script');
+    s2.src='motor.js';
+    s2.onload=function(){ baslat(); };
+    s2.onerror=function(){ baslat(); };
     document.head.appendChild(s2);
 };
-s1.onerror = function(){
-    document.getElementById('root').innerHTML =
+s1.onerror=function(){
+    document.getElementById('root').innerHTML=
         '<div class="box"><div class="logo">&#128683;</div>'+
         '<h1>Baglanti kurulamadi</h1>'+
         '<p style="color:#888;font-size:13px;">Internet baglantinizi kontrol edin.</p></div>';
@@ -89,21 +98,12 @@ document.head.appendChild(s1);
 function R(id){ return document.getElementById(id); }
 
 function getDid(){
-    var d = localStorage.getItem('did');
+    var d=localStorage.getItem('did');
     if(!d){
-        d = 'xxxxxxxxxxxx'.replace(/x/g,function(){ return (Math.random()*16|0).toString(16); });
+        d='xxxxxxxxxxxx'.replace(/x/g,function(){ return(Math.random()*16|0).toString(16); });
         localStorage.setItem('did',d);
     }
     return d;
-}
-
-// Bu cihazda kayitli secret var mi?
-function kayitliSecretBul(){
-    for(var i=0;i<200;i++){
-        var s = localStorage.getItem('kapi_secret_'+i);
-        if(s) return {slot:i, secret:s};
-    }
-    return null;
 }
 
 function gP(k){ return new URLSearchParams(window.location.search).get(k)||''; }
@@ -120,9 +120,9 @@ function esc(s){
 // ----------------------------------------------------------------
 function kapiAcildiSesi(){
     try{
-        var ctx = new(window.AudioContext||window.webkitAudioContext)();
+        var ctx=new(window.AudioContext||window.webkitAudioContext)();
         function ton(frekans,baslangic,sure){
-            var osc=ctx.createOscillator(), gain=ctx.createGain();
+            var osc=ctx.createOscillator(),gain=ctx.createGain();
             osc.connect(gain); gain.connect(ctx.destination);
             osc.type='sine';
             osc.frequency.setValueAtTime(frekans,ctx.currentTime+baslangic);
@@ -132,8 +132,8 @@ function kapiAcildiSesi(){
             osc.start(ctx.currentTime+baslangic);
             osc.stop(ctx.currentTime+baslangic+sure+0.05);
         }
-        ton(880, 0.0, 0.15);
-        ton(1320,0.2, 0.2);
+        ton(880,0.0,0.15);
+        ton(1320,0.2,0.2);
         setTimeout(function(){ try{ctx.close();}catch(e){} },1000);
     }catch(e){}
 }
@@ -141,13 +141,12 @@ function kapiAcildiSesi(){
 // ================================================================
 // MQTT
 // ================================================================
-var _mqCl = null;
-var _conn = false;
+var _mqCl=null, _conn=false;
 
 function mqttBaglan(onHazir){
     if(_mqCl&&_conn){ if(onHazir) onHazir(); return; }
     if(_mqCl){ try{_mqCl.end(true);}catch(e){} _mqCl=null; _conn=false; }
-    _mqCl = mqtt.connect(MQTT_URL,{
+    _mqCl=mqtt.connect(MQTT_URL,{
         clientId  : 'web_'+Math.random().toString(36).substring(2,12),
         username  : MQTT_USER,
         password  : MQTT_PASS,
@@ -165,29 +164,21 @@ function mqttBaglan(onHazir){
 // ANA BAŞLANGIÇ
 // ================================================================
 function baslat(){
-    var INV_LINK = gP('l');
-    var SLOT     = gP('s');
-    var SECRET   = gP('k');
-    var SLOT_INT = parseInt(SLOT,10);
+    var INV_LINK=gP('l');
+    var SLOT    =gP('s');
+    var SECRET  =gP('k');
+    var SLOT_INT=parseInt(SLOT,10);
 
     if(INV_LINK.length===16){
-        // ----------------------------------------------------------------
-        // KAYIT LİNKİ — önce bu cihazda kayıt var mı kontrol et
-        // Varsa direkt buton sayfasına gec (kayıt formunu gösterme)
-        // ----------------------------------------------------------------
-        var mevcut = kayitliSecretBul();
-        if(mevcut){
-            // Bu cihaz zaten kayıtlı — direkt butona git
-            renderButon(mevcut.slot, mevcut.secret);
-        } else {
-            // Henüz kayıt yok — kayıt formu göster
-            // Ama önce: bu link zaten başka bir cihazda kayıtlı mı?
-            // Bunu ESP'den öğrenemeyiz (MQTT async), dolayısıyla
-            // kayıt denemesinde ESP reddederse hata mesajı gelir.
-            renderKayit(INV_LINK);
+        renderKayit(INV_LINK);
+    } else if(SLOT.length>0&&SECRET.length>0&&!isNaN(SLOT_INT)){
+        // chipId URL'den veya localStorage'dan al
+        var chipId=gP('c')||localStorage.getItem('kapi_chip_'+SLOT_INT)||'';
+        if(!chipId){
+            renderHata('Sistem bilgisi eksik. Lutfen davetiye linkinizi tekrar kullanin.');
+            return;
         }
-    } else if(SLOT.length>0 && SECRET.length>0 && !isNaN(SLOT_INT)){
-        renderButon(SLOT_INT, SECRET);
+        renderButon(SLOT_INT,SECRET,chipId);
     } else {
         renderTest();
     }
@@ -197,7 +188,7 @@ function baslat(){
 // TEST MODU
 // ================================================================
 function renderTest(){
-    R('root').innerHTML =
+    R('root').innerHTML=
         '<div class="box">'+
         '<div class="logo">&#128272;</div>'+
         '<h1>Kapi Sistemi</h1>'+
@@ -209,33 +200,31 @@ function renderTest(){
 // HATA SAYFASI
 // ================================================================
 function renderHata(msg){
-    R('root').innerHTML =
+    R('root').innerHTML=
         '<div class="err-page">'+
         '<div style="font-size:52px">&#128683;</div>'+
         '<h2>Erisim Hatasi</h2><p>'+esc(msg)+'</p></div>';
 }
 
 // ================================================================
-// DAVETIYE HATASI — başkasına ait / geçersiz link
+// DAVETIYE HATASI — baska cihaza ait
 // ================================================================
 function renderDavetiyeHatasi(msg){
-    R('root').innerHTML =
+    R('root').innerHTML=
         '<div class="box">'+
         '<div class="logo">&#9888;&#65039;</div>'+
         '<h1 style="color:#e65100;">Gecersiz Davetiye</h1>'+
         '<p style="font-size:14px;color:#666;line-height:1.6;margin-top:8px;">'+esc(msg)+'</p>'+
         '<p style="font-size:12px;color:#aaa;margin-top:14px;" id="kapanma">Bu sayfa 5 saniye sonra kapanacak.</p>'+
         '</div>';
-    // 5 saniye geri sayım
-    var kalan = 5;
-    var timer = setInterval(function(){
+    var kalan=5;
+    var timer=setInterval(function(){
         kalan--;
-        var el = R('kapanma');
-        if(el) el.textContent = 'Bu sayfa '+kalan+' saniye sonra kapanacak.';
+        var el=R('kapanma');
+        if(el) el.textContent='Bu sayfa '+kalan+' saniye sonra kapanacak.';
         if(kalan<=0){
             clearInterval(timer);
-            // Sayfayı temizle ve boş bırak
-            document.body.innerHTML = '<div style="color:#fff;text-align:center;padding:40px;font-family:Arial;font-size:14px;">Sayfa kapatildi.</div>';
+            document.body.innerHTML='<div style="color:#fff;text-align:center;padding:40px;font-family:Arial;font-size:14px;">Sayfa kapatildi.</div>';
         }
     },1000);
 }
@@ -244,9 +233,9 @@ function renderDavetiyeHatasi(msg){
 // KAYIT SAYFASI
 // ================================================================
 function renderKayit(invLink){
-    var did = getDid();
+    var did=getDid();
 
-    R('root').innerHTML =
+    R('root').innerHTML=
         '<div class="kayit-box">'+
         '<h1>&#128272; Kapi Sistemine Kayit</h1>'+
         '<p class="kayit-sub">Davetiye kodunuzu ve bilgilerinizi girin.</p>'+
@@ -257,7 +246,7 @@ function renderKayit(invLink){
         '</div>'+
         '<div class="sfg">'+
             '<label class="sfl">AD SOYAD</label>'+
-            '<input id="ad" class="sfi" type="text" maxlength="23" placeholder="Adinizi girin">'+
+            '<input id="ad" class="sfi" type="text" maxlength="19" placeholder="Adinizi girin">'+
         '</div>'+
         '<div class="sfg">'+
             '<label class="sfl">TELEFON</label>'+
@@ -276,74 +265,112 @@ function renderKayit(invLink){
     R('tel').addEventListener('keypress',function(e){ if(e.key==='Enter') kayitGonder(); });
     R('tel').addEventListener('input',   function(){ this.value=this.value.replace(/[^0-9]/g,''); });
 
-    mqttBaglan(null);
+    // MQTT'yi arka planda hazırla — kayıt için chipId henüz bilinmiyor,
+    // ESP'den DURUM_TOPIC üzerinden öğreneceğiz.
+    // Kayıt topic'i chipId gerektirdiğinden önce ESP'yi bulmamız lazım.
+    // Bunu invite linkinden gelen chipId ile yapıyoruz (ESP davet linkine eklemez,
+    // dolayısıyla ilk MQTT bağlantısında wildcard ile dinleyip öğreniriz).
+    var _chipIdBekleniyor=null;
+    mqttBaglan(function(){
+        // DURUM_TOPIC wildcard ile dinle: esp8266/kapi/+/durum
+        _mqCl.subscribe('esp8266/kapi/+/durum',{qos:0},function(){});
+        _mqCl.on('message',function durumDinle(topic,payload){
+            if(topic.indexOf('/durum')<0) return;
+            try{
+                var d=JSON.parse(payload.toString());
+                if(d.durum==='online'&&d.chipId&&!_chipIdBekleniyor){
+                    _chipIdBekleniyor=d.chipId;
+                    _mqCl.removeListener('message',durumDinle);
+                }
+            }catch(e){}
+        });
+    });
 
-    window.kayitGonder = function(){
-        var kod    = R('kod').value.trim();
-        var ad     = R('ad').value.trim();
-        var tel    = R('tel').value.trim();
-        var tamTel = '+90'+tel;
+    window.kayitGonder=function(){
+        var kod   =R('kod').value.trim();
+        var ad    =R('ad').value.trim();
+        var tel   =R('tel').value.trim();
+        var tamTel='+90'+tel;
 
         if(kod.length!==6||isNaN(Number(kod))){ showMsg('6 haneli sayisal kod girin!',true); return; }
         if(ad.length<2){ showMsg('Ad soyad girin!',true); return; }
         if(tel.length<10){ showMsg('10 haneli numara girin',true); return; }
 
-        var btn = R('kayitBtn');
+        var btn=R('kayitBtn');
         if(btn) btn.disabled=true;
         showMsg('Kayit yapiliyor...',false);
 
         mqttBaglan(function(){
-            var yanit_topic = KAYIT_YANIT+did;
-            var zaman_asimi = null;
-
-            _mqCl.subscribe(yanit_topic,{qos:1},function(err){
-                if(err){ showMsg('Baglanti hatasi, tekrar deneyin',true); if(btn) btn.disabled=false; return; }
-
-                var paket = JSON.stringify({link:invLink,kod:kod,ad:ad,tel:tamTel,did:did});
-                _mqCl.publish(KAYIT_TOPIC,paket,{qos:1},function(e){
-                    if(e){ showMsg('Gonderim hatasi!',true); if(btn) btn.disabled=false; return; }
-                    showMsg('Bekleniyor...',false);
-                    zaman_asimi = setTimeout(function(){
-                        showMsg('Yanit alinamadi, tekrar deneyin.',true);
+            // chipId hâlâ bekliyorsa kısa bir süre daha bekle
+            var deneme=0;
+            var bekle=setInterval(function(){
+                deneme++;
+                if(_chipIdBekleniyor||deneme>20){
+                    clearInterval(bekle);
+                    if(!_chipIdBekleniyor){
+                        showMsg('ESP sisteme ulasilamiyor. Lutfen tekrar deneyin.',true);
                         if(btn) btn.disabled=false;
-                    },15000);
-                });
-
-                _mqCl.on('message',function yanit_dinle(topic,payload){
-                    if(topic!==yanit_topic) return;
-                    if(zaman_asimi) clearTimeout(zaman_asimi);
-                    try{
-                        var d = JSON.parse(payload.toString());
-                        if(d.ok){
-                            localStorage.setItem('kapi_secret_'+d.slot,d.secret);
-                            showMsg('Kayit basarili! Yonlendiriliyorsunuz...',false);
-                            setTimeout(function(){
-                                window.location.href =
-                                    window.location.pathname+
-                                    '?s='+d.slot+'&k='+encodeURIComponent(d.secret);
-                            },1500);
-                        } else {
-                            // ----------------------------------------
-                            // ESP "Gecersiz davetiye" dedi —
-                            // bu link baska cihazda kayıtlı olabilir
-                            // ----------------------------------------
-                            if(d.mesaj && d.mesaj.indexOf('Gecersiz')>=0){
-                                renderDavetiyeHatasi('Bu davetiye baska bir cihaza aittir. Kendi davetiyenizi kullanin.');
-                            } else {
-                                showMsg(d.mesaj||'Kayit hatasi!',true);
-                                if(btn) btn.disabled=false;
-                            }
-                            _mqCl.removeListener('message',yanit_dinle);
-                        }
-                    }catch(e){
-                        showMsg('Beklenmeyen yanit, tekrar deneyin.',true);
-                        if(btn) btn.disabled=false;
-                        _mqCl.removeListener('message',yanit_dinle);
+                        return;
                     }
-                });
-            });
+                    _gonderKayit(_chipIdBekleniyor,invLink,kod,ad,tamTel,did,btn);
+                }
+            },300);
         });
     };
+
+    function _gonderKayit(chipId,invLink,kod,ad,tel,did,btn){
+        var T=topics(chipId);
+        var yanit_topic=T.kayitYanit+did;
+        var zaman_asimi=null;
+
+        _mqCl.subscribe(yanit_topic,{qos:1},function(err){
+            if(err){ showMsg('Baglanti hatasi, tekrar deneyin',true); if(btn) btn.disabled=false; return; }
+
+            var paket=JSON.stringify({link:invLink,kod:kod,ad:ad,tel:tel,did:did});
+            _mqCl.publish(T.kayit,paket,{qos:1},function(e){
+                if(e){ showMsg('Gonderim hatasi!',true); if(btn) btn.disabled=false; return; }
+                showMsg('Bekleniyor...',false);
+                zaman_asimi=setTimeout(function(){
+                    showMsg('Yanit alinamadi, tekrar deneyin.',true);
+                    if(btn) btn.disabled=false;
+                },15000);
+            });
+
+            _mqCl.on('message',function yanit_dinle(topic,payload){
+                if(topic!==yanit_topic) return;
+                if(zaman_asimi) clearTimeout(zaman_asimi);
+                try{
+                    var d=JSON.parse(payload.toString());
+                    if(d.ok){
+                        // Kayit basarili — chipId'yi de sakla
+                        localStorage.setItem('kapi_secret_'+d.slot,d.secret);
+                        localStorage.setItem('kapi_chip_'+d.slot,chipId);
+                        localStorage.setItem('kapi_sid_'+d.slot,d.sid||'Kapi Sistemi');
+                        showMsg('Kayit basarili! Yonlendiriliyorsunuz...',false);
+                        setTimeout(function(){
+                            window.location.href=
+                                window.location.pathname+
+                                '?s='+d.slot+
+                                '&k='+encodeURIComponent(d.secret)+
+                                '&c='+chipId;
+                        },1500);
+                    } else {
+                        if(d.mesaj&&d.mesaj.indexOf('Gecersiz')>=0){
+                            renderDavetiyeHatasi('Bu davetiye baska bir cihaza aittir.');
+                        } else {
+                            showMsg(d.mesaj||'Kayit hatasi!',true);
+                            if(btn) btn.disabled=false;
+                        }
+                        _mqCl.removeListener('message',yanit_dinle);
+                    }
+                }catch(e){
+                    showMsg('Beklenmeyen yanit, tekrar deneyin.',true);
+                    if(btn) btn.disabled=false;
+                    _mqCl.removeListener('message',yanit_dinle);
+                }
+            });
+        });
+    }
 
     function showMsg(txt,isErr){
         var el=R('msg'); if(!el) return;
@@ -356,17 +383,16 @@ function renderKayit(invLink){
 // ================================================================
 // BUTON SAYFASI
 // ================================================================
-var _yanit     = '';
-var _did       = '';
-var _sec       = '';
-var _slot      = 0;
-var _espOnline = false;
+var _yanit='', _did='', _sec='', _slot=0, _chipId='', _T=null;
+var _espOnline=false;
 
-function renderButon(slotInt,secret){
-    _did   = getDid();
-    _sec   = secret||localStorage.getItem('kapi_secret_'+slotInt)||'';
-    _slot  = slotInt;
-    _yanit = YANIT_PFX+_did;
+function renderButon(slotInt,secret,chipId){
+    _did    =getDid();
+    _sec    =secret||localStorage.getItem('kapi_secret_'+slotInt)||'';
+    _slot   =slotInt;
+    _chipId =chipId;
+    _T      =topics(chipId);
+    _yanit  =_T.yanitPfx+_did;
 
     if(!_sec){
         renderHata('Bu baglanti gecerli degil. Lutfen yeniden davetiye isteyin.');
@@ -381,10 +407,13 @@ function renderButon(slotInt,secret){
         }
     }
 
-    R('root').innerHTML =
+    // Sistem adi - localStorage'dan veya durum topic'ten gelecek
+    var sid=localStorage.getItem('kapi_sid_'+slotInt)||'Kapi Sistemi';
+
+    R('root').innerHTML=
         '<div class="box">'+
         '<div class="logo">&#128682;</div>'+
-        '<h1 id="sysTitle">Kapi Sistemi</h1>'+
+        '<h1 id="sysTitle">'+esc(sid)+'</h1>'+
         '<div class="status s-wait" id="statBox">&#9203; Baglaniyor...</div>'+
         '<button class="acbtn ab-off" id="acBtn" onclick="kapiAc()" disabled>&#128275;</button>'+
         '</div>';
@@ -396,14 +425,9 @@ function setStat(cls,html){
     var el=R('statBox');
     if(el){ el.className='status '+cls; el.innerHTML=html; }
 }
-
 function btnOn(ok){
     var b=R('acBtn');
-    if(b){
-        b.disabled=!ok;
-        b.classList.toggle('ab-on', ok);
-        b.classList.toggle('ab-off',!ok);
-    }
+    if(b){ b.disabled=!ok; b.classList.toggle('ab-on',ok); b.classList.toggle('ab-off',!ok); }
 }
 
 function mqttBaglanButon(){
@@ -411,14 +435,11 @@ function mqttBaglanButon(){
     _espOnline=false;
 
     mqttBaglan(function(){
-        _mqCl.subscribe(_yanit,   {qos:0});
-        _mqCl.subscribe(DURUM_TOPIC,{qos:1},function(err){
-            if(err){
-                setStat('s-err','&#10060; Baglanti kurulamadi');
-                return;
-            }
-            // Broker'a abone olduk — retained mesaj otomatik gelecek.
-            // Eger 6 saniye icinde gelmezse ESP offline demektir.
+        // Chip ID'ye özel topic'lere abone ol
+        _mqCl.subscribe(_yanit,    {qos:0});
+        _mqCl.subscribe(_T.durum,  {qos:1},function(err){
+            if(err){ setStat('s-err','&#10060; Baglanti kurulamadi'); return; }
+            // Retained mesaj gelecek — 6sn içinde gelmezse offline
             setTimeout(function(){
                 if(!_espOnline){
                     setStat('s-err','&#10060; Sistem su an cevrimdisi');
@@ -428,15 +449,15 @@ function mqttBaglanButon(){
         });
 
         _mqCl.on('message',function(topic,payload){
-            // --- LWT/Retained durum mesaji ---
-            if(topic===DURUM_TOPIC){
+            // LWT/Retain durum mesaji
+            if(topic===_T.durum){
                 try{
                     var d=JSON.parse(payload.toString());
                     if(d.durum==='online'){
                         _espOnline=true;
                         if(d.sid){
                             var t=R('sysTitle');
-                            if(t) t.textContent=d.sid;
+                            if(t){ t.textContent=d.sid; localStorage.setItem('kapi_sid_'+_slot,d.sid); }
                         }
                         setStat('s-conn','&#9989; Hazir — Butona basin');
                         btnOn(true);
@@ -449,7 +470,7 @@ function mqttBaglanButon(){
                 return;
             }
 
-            // --- Kapi acilma yaniti ---
+            // Kapi acilma yaniti
             if(topic===_yanit){
                 try{
                     var d2=JSON.parse(payload.toString());
@@ -496,20 +517,15 @@ function kapiAc(){
     btnOn(false);
 
     var paket=JSON.stringify({k:_sec,s:_slot,d:_did});
-    _mqCl.publish(KOMUT_TOPIC,paket,{qos:1},function(err){
-        if(err){
-            setStat('s-err','&#10060; Gonderim hatasi!');
-            btnOn(true);
-        }
+    _mqCl.publish(_T.komut,paket,{qos:1},function(err){
+        if(err){ setStat('s-err','&#10060; Gonderim hatasi!'); btnOn(true); }
     });
 
-    // 8 saniye icinde yanit gelmezse timeout
     setTimeout(function(){
         var el=R('statBox');
         if(el&&el.className.indexOf('s-wait')>=0){
             setStat('s-err','&#10060; Yanit alinamadi');
-            _espOnline=false;
-            btnOn(false);
+            _espOnline=false; btnOn(false);
         }
     },8000);
 }
