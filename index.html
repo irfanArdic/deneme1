@@ -332,6 +332,9 @@ function renderKayit(invLink){
         '</div>'+
         '<button class="gbtn" id="kayitBtn" onclick="kayitGonder()">&#9989; Kayit Ol</button>'+
         '<a class="yardim-link" href="'+YARDIM_LINK+'" target="_blank">&#10067; Nasil kayit olurum?</a>'+
+        '<div style="margin-top:16px;padding:10px;background:#fff3e0;border-radius:8px;font-size:10px;color:#e65100;word-break:break-all;font-family:monospace;">'+
+            '<b>[GECICI TEST]</b> did = '+did+' (uzunluk: '+did.length+')'+
+        '</div>'+
         '</div>';
 
     R('kod').focus();
@@ -498,6 +501,9 @@ function ciziGezgini(){
         '<h1 id="sysTitle">Yukleniyor...</h1>'+
         '<div class="status s-wait" id="statBox">&#9203; Baglaniyor...</div>'+
         '<button class="acbtn ab-off" id="acBtn" onclick="kapiAc()" disabled>&#128275;</button>'+
+        '<div style="margin-top:14px;padding:8px;background:#fff3e0;border-radius:8px;font-size:10px;color:#e65100;word-break:break-all;font-family:monospace;">'+
+            '<b>[GECICI TEST]</b> did = '+_did+' (uzunluk: '+_did.length+')'+
+        '</div>'+
         '</div>';
 
     R('root').innerHTML = html;
