@@ -142,15 +142,25 @@ function sistemListesiOku(){
     }catch(e){ return []; }
 }
 
-// Kayıtlı tüm sistemlerin güncel bilgisini (secret+sid) toplar
+// Kayıtlı tüm sistemlerin güncel bilgisini (secret+sid) toplar.
+// Secret'i artık localStorage'da olmayan (silinmiş/temizlenmiş) kayıtları
+// listeden de otomatik temizler — "hayalet" sistem kalmasını önler.
 function tumSistemleriGetir(){
     var liste=sistemListesiOku();
     var sonuc=[];
+    var gecerliListe=[];
     for(var i=0;i<liste.length;i++){
         var s=liste[i];
         var secret=localStorage.getItem(lsKey('secret',s.chipId,s.slot));
         var sid   =localStorage.getItem(lsKey('sid',s.chipId,s.slot))||'Kapi Sistemi';
-        if(secret) sonuc.push({chipId:s.chipId,slot:s.slot,secret:secret,sid:sid});
+        if(secret){
+            sonuc.push({chipId:s.chipId,slot:s.slot,secret:secret,sid:sid});
+            gecerliListe.push(s);
+        }
+    }
+    // Liste değiştiyse (geçersiz kayıt temizlendiyse) localStorage'ı güncelle
+    if(gecerliListe.length!==liste.length){
+        localStorage.setItem('kapi_sistem_listesi',JSON.stringify(gecerliListe));
     }
     return sonuc;
 }
