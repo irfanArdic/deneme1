@@ -108,8 +108,21 @@ function R(id){ return document.getElementById(id); }
 function getDid(){
     var d=localStorage.getItem('did');
     if(!d){
-        d='xxxxxxxxxxxx'.replace(/x/g,function(){ return(Math.random()*16|0).toString(16); });
+        // 24 hex karakter = 12 byte — ESP'nin beklediği deviceId[12] ile eşleşmeli
+        d='xxxxxxxxxxxxxxxxxxxxxxxx'.replace(/x/g,function(){ return(Math.random()*16|0).toString(16); });
         localStorage.setItem('did',d);
+        console.log('[DID DEBUG] Yeni did uretildi:', d, '(uzunluk:', d.length, 'karakter =', d.length/2, 'byte)');
+    } else if(d.length !== 24){
+        // Eski format (12 karakter = 6 byte) tespit edildi — otomatik geçiş.
+        // NOT: Bu, eski kayıtları geçersiz kılar (ESP'deki deviceId ile artık
+        // eşleşmeyecek), kullanıcı yeniden kayıt olmalı. Ama en azından
+        // sistem tutarlı hale gelir, sonsuza kadar bozuk kalmaz.
+        console.warn('[DID DEBUG] Eski format did tespit edildi (uzunluk:', d.length, '). Yeni did uretiliyor.');
+        d='xxxxxxxxxxxxxxxxxxxxxxxx'.replace(/x/g,function(){ return(Math.random()*16|0).toString(16); });
+        localStorage.setItem('did',d);
+        console.log('[DID DEBUG] Yeni did (migration sonrasi):', d, '(uzunluk:', d.length, 'karakter)');
+    } else {
+        console.log('[DID DEBUG] localStorage\'dan mevcut did okundu:', d, '(uzunluk:', d.length, 'karakter =', d.length/2, 'byte)');
     }
     return d;
 }
@@ -411,10 +424,16 @@ function renderKayit(invLink){
         var yanit_topic=T.kayitYanit+did;
         var zaman_asimi=null;
 
+        console.log('[DID DEBUG] Kayit gonderiliyor. did:', did, '(uzunluk:', did.length, 'karakter)');
+        console.log('[DID DEBUG] chipId:', chipId);
+        console.log('[DID DEBUG] Kayit topic:', T.kayit);
+        console.log('[DID DEBUG] Yanit topic (abone olunan):', yanit_topic);
+
         _mqCl.subscribe(yanit_topic,{qos:1},function(err){
             if(err){ showMsg('Baglanti hatasi, tekrar deneyin',true); if(btn) btn.disabled=false; return; }
 
             var paket=JSON.stringify({link:invLink,kod:kod,ad:ad,tel:tel,did:did});
+            console.log('[DID DEBUG] Gonderilen ham paket (JSON):', paket);
             _mqCl.publish(T.kayit,paket,{qos:1},function(e){
                 if(e){ showMsg('Gonderim hatasi!',true); if(btn) btn.disabled=false; return; }
                 showMsg('Bekleniyor...',false);
@@ -478,6 +497,7 @@ var _touchStartX=0, _touchEndX=0;
 
 function renderSistemGezgini(baslangicChipId,baslangicSlot){
     _did = getDid();
+    console.log('[DID DEBUG] Buton sayfasi acildi. _did:', _did, '(uzunluk:', _did.length, 'karakter)');
     _sistemler = tumSistemleriGetir();
 
     if(_sistemler.length===0){
@@ -680,6 +700,8 @@ function kapiAc(){
     btnOn(false);
 
     var paket=JSON.stringify({k:s.secret,s:s.slot,d:_did});
+    console.log('[DID DEBUG] Kapi acma komutu gonderiliyor. _did:', _did, '(uzunluk:', _did.length, 'karakter), slot:', s.slot);
+    console.log('[DID DEBUG] Gonderilen ham paket:', paket);
     _mqCl.publish(_T.komut,paket,{qos:1},function(err){
         if(err){ setStat('s-err','&#10060; Gonderim hatasi!'); btnOn(true); }
     });
