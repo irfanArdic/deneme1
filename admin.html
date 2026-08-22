@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Uzaktan Admin Panel</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{font-family:Arial,sans-serif;background:linear-gradient(135deg,#1a1a2e,#16213e);min-height:100vh;padding:16px;}
+.wrap{max-width:480px;margin:0 auto;}
+.box{background:#fff;border-radius:20px;padding:22px 20px;margin-bottom:14px;box-shadow:0 6px 24px rgba(0,0,0,.3);}
+h1{font-size:18px;color:#1a1a2e;margin-bottom:4px;}
+.sub{font-size:12px;color:#888;margin-bottom:16px;}
+.sfg{margin-bottom:12px;}
+.sfl{font-size:11px;font-weight:700;color:#667eea;margin-bottom:4px;display:block;}
+.sfi{width:100%;padding:11px 13px;border:2px solid #e5e7eb;border-radius:10px;font-size:15px;outline:none;font-family:inherit;}
+.sfi:focus{border-color:#667eea;}
+.gbtn{width:100%;padding:13px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;border-radius:11px;cursor:pointer;font-size:15px;font-weight:700;margin-top:4px;font-family:inherit;}
+.gbtn:active{opacity:.85;}
+.gbtn:disabled{opacity:.5;cursor:not-allowed;}
+.msg{padding:10px 12px;border-radius:9px;font-size:13px;margin-bottom:12px;display:none;}
+.msg.err{background:#ffcdd2;color:#c62828;}
+.msg.ok{background:#c8e6c9;color:#2e7d32;}
+.status-row{display:flex;align-items:center;gap:8px;margin-bottom:14px;}
+.dot{width:9px;height:9px;border-radius:50%;background:#bbb;flex-shrink:0;}
+.dot.on{background:#4caf50;box-shadow:0 0 4px #4caf50;}
+.dot.off{background:#f44336;}
+.status-txt{font-size:13px;color:#555;}
+.tabs{display:flex;gap:6px;margin-bottom:14px;}
+.tab{flex:1;padding:9px;text-align:center;border-radius:9px;font-size:12px;font-weight:700;background:#f0f0f0;color:#888;cursor:pointer;}
+.tab.active{background:#667eea;color:#fff;}
+.panel{display:none;}
+.panel.active{display:block;}
+.kart{background:#f8f9fa;border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.kad{flex:1;font-size:13px;font-weight:700;color:#1a1a2e;}
+.ktel{font-size:11px;color:#888;}
+.ksil{background:#ffcdd2;color:#c62828;border:none;border-radius:7px;padding:6px 10px;font-size:11px;cursor:pointer;font-weight:700;}
+.slot-sec{display:flex;gap:6px;margin-bottom:8px;}
+.slot-sec input{flex:1;}
+.warn-box{background:#fff3e0;color:#e65100;padding:9px 11px;border-radius:9px;font-size:11px;margin-bottom:14px;line-height:1.5;}
+.inv-result{background:#1e1e2e;border-radius:10px;padding:12px;margin-top:10px;display:none;}
+.inv-result.show{display:block;}
+.inv-link{color:#69f0ae;font-size:11px;font-family:monospace;word-break:break-all;margin-bottom:6px;}
+.inv-kod{color:#69f0ae;font-size:22px;font-family:monospace;font-weight:700;letter-spacing:5px;text-align:center;}
+.copy-btn{background:#333;color:#fff;border:none;border-radius:7px;padding:6px 10px;font-size:10px;cursor:pointer;margin-top:8px;width:100%;}
+</style>
+</head>
+<body>
+<div class="wrap" id="root">
+    <div class="box">
+        <h1>&#128241; Uzaktan Admin Panel</h1>
+        <p class="sub">Cihazin yaninda olmadan yonetim yapin</p>
+        <div id="girisAlani">
+            <div class="sfg">
+                <label class="sfl">CIHAZ KIMLIGI (Chip ID)</label>
+                <input id="chipIdInput" class="sfi" type="text" placeholder="orn: 00EE2C3E" maxlength="8" style="text-transform:uppercase;">
+            </div>
+            <div class="sfg">
+                <label class="sfl">ADMIN SIFRESI</label>
+                <input id="sifreInput" class="sfi" type="password" placeholder="Sifrenizi girin">
+            </div>
+            <div class="msg" id="girisMsg"></div>
+            <button class="gbtn" id="girisBtn" onclick="baglan()">&#128272; Baglan</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ================================================================
+// YAPILANDIRMA — index.html ile aynı MQTT broker
+// ================================================================
+var MQTT_URL  = 'wss://49de32fbb15f4b4ead7a5919fb255492.s1.eu.hivemq.cloud:8884/mqtt';
+var MQTT_USER = 'ESP8266_buton';
+var MQTT_PASS = 'EDCrfv01';
+
+// ----------------------------------------------------------------
+// GÜVENLİK NOTU: Bu panel SADECE aşağıdaki "sık kullanılan, düşük
+// riskli" işlemleri destekler. WiFi ayarları, ESP Secret yenileme,
+// admin şifresi değiştirme, komple sıfırlama gibi kritik işlemler
+// BU PANELDEN YAPILAMAZ — ESP tarafı bu komutları MQTT üzerinden
+// zaten reddediyor (bkz. mqttAdminKomutIsle). Bu, "uzaktan erişim
+// kolaylığı" ile "güvenlik sınırı" arasındaki bilinçli dengedir.
+// ----------------------------------------------------------------
+
+var _mqCl = null, _conn = false, _espOnline = false;
+var _chipId = '', _sifre = '';
+var _adminTopic = '', _adminYanitPfx = '', _durumTopic = '';
+
+function R(id){ return document.getElementById(id); }
+function esc(s){
+    if(!s) return '';
+    return String(s).replace(/[&<>"]/g,function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+    });
+}
+
+// ----------------------------------------------------------------
+// MQTT kütüphanesini yükle, sonra bağlantı fonksiyonlarını hazırla
+// ----------------------------------------------------------------
+var s1 = document.createElement('script');
+s1.src = 'https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js';
+s1.onload = function(){ /* hazır, kullanıcı "Bağlan" diyene kadar bekle */ };
+s1.onerror = function(){
+    R('girisMsg').textContent = 'MQTT kutuphanesi yuklenemedi. Internet baglantinizi kontrol edin.';
+    R('girisMsg').className = 'msg err';
+    R('girisMsg').style.display = 'block';
+};
+document.head.appendChild(s1);
+
+function baglan(){
+    var chipId = R('chipIdInput').value.trim().toUpperCase();
+    var sifre  = R('sifreInput').value;
+
+    if(chipId.length !== 8){
+        showGirisMsg('Chip ID 8 karakter olmali (orn: 00EE2C3E)', true);
+        return;
+    }
+    if(sifre.length < 1){
+        showGirisMsg('Sifre girin', true);
+        return;
+    }
+
+    _chipId = chipId;
+    _sifre = sifre;
+    _adminTopic = 'esp8266/kapi/'+chipId+'/admin/komut';
+    _adminYanitPfx = 'esp8266/kapi/'+chipId+'/admin/yanit/';
+    _durumTopic = 'esp8266/kapi/'+chipId+'/durum';
+
+    var btn = R('girisBtn');
+    btn.disabled = true;
+    btn.textContent = 'Baglaniyor...';
+    showGirisMsg('MQTT baglantisi kuruluyor...', false);
+
+    if(typeof mqtt === 'undefined'){
+        showGirisMsg('MQTT kutuphanesi henuz yuklenmedi, birazdan tekrar deneyin.', true);
+        btn.disabled = false; btn.textContent = 'Baglan';
+        return;
+    }
+
+    _mqCl = mqtt.connect(MQTT_URL,{
+        clientId: 'admin_'+Math.random().toString(36).substring(2,12),
+        username: MQTT_USER,
+        password: MQTT_PASS,
+        reconnectPeriod: 4000,
+        connectTimeout: 15000,
+        keepalive: 30,
+        clean: true
+    });
+
+    _mqCl.on('connect', function(){
+        _conn = true;
+        // Cihaz durumunu (online mi) ve daha sonra kullanıcı liste
+        // isteğini bekleyecek yanıt topic'ini dinlemeye başla
+        _mqCl.subscribe(_durumTopic, {qos:1}, function(err){
+            if(err){ showGirisMsg('Abonelik hatasi.', true); btn.disabled=false; btn.textContent='Baglan'; return; }
+            showGirisMsg('Cihaz araniyor...', false);
+        });
+
+        // 6 saniye içinde retained durum mesajı gelmezse "bulunamadı" de
+        setTimeout(function(){
+            if(!_espOnline){
+                showGirisMsg('Cihaz bulunamadi veya cevrimdisi. Chip ID\'yi kontrol edin.', true);
+                btn.disabled = false; btn.textContent = 'Baglan';
+            }
+        }, 6000);
+    });
+
+    _mqCl.on('message', function(topic, payload){
+        if(topic === _durumTopic){
+            try{
+                var d = JSON.parse(payload.toString());
+                if(d.durum === 'online'){
+                    _espOnline = true;
+                    girisEkraniniKapatVePaneliAc(d.sid || 'Kapi Sistemi');
+                }
+            }catch(e){}
+        }
+    });
+
+    _mqCl.on('error', function(){
+        showGirisMsg('Baglanti hatasi.', true);
+        btn.disabled = false; btn.textContent = 'Baglan';
+    });
+}
+
+function showGirisMsg(txt, isErr){
+    var el = R('girisMsg');
+    el.textContent = txt;
+    el.className = 'msg ' + (isErr ? 'err' : 'ok');
+    el.style.display = 'block';
+}
+
+// ----------------------------------------------------------------
+// Cihaz bulunduktan sonra asıl yönetim paneli açılır
+// ----------------------------------------------------------------
+function girisEkraniniKapatVePaneliAc(sid){
+    R('root').innerHTML =
+        '<div class="box">'+
+        '<div class="status-row">'+
+            '<div class="dot on"></div>'+
+            '<div class="status-txt"><b>'+esc(sid)+'</b> — Cihaz ID: '+esc(_chipId)+'</div>'+
+        '</div>'+
+        '<div class="warn-box">&#9888; Bu panel sadece davetiye olusturma, kullanici listeleme/silme '+
+        've sistem adi degistirme islemlerini destekler. WiFi ayarlari, ESP Secret ve sifre '+
+        'degisiklikleri sadece cihaz basinda (local panel) yapilabilir.</div>'+
+        '<div class="tabs">'+
+            '<div class="tab active" id="tabDavet" onclick="tabSec(\'davet\')">Davet Gonder</div>'+
+            '<div class="tab" id="tabListe" onclick="tabSec(\'liste\')">Kullanicilar</div>'+
+            '<div class="tab" id="tabSistem" onclick="tabSec(\'sistem\')">Sistem Adi</div>'+
+        '</div>'+
+
+        '<div class="panel active" id="panelDavet">'+
+            '<div class="sfg"><label class="sfl">SLOT NUMARASI (0-79)</label>'+
+            '<input id="davetSlot" class="sfi" type="number" min="0" max="79" placeholder="orn: 3"></div>'+
+            '<button class="gbtn" onclick="davetGonder()">&#128231; Davetiye Olustur</button>'+
+            '<div class="inv-result" id="invResult">'+
+                '<div class="inv-link" id="invLink"></div>'+
+                '<div class="inv-kod" id="invKod"></div>'+
+                '<button class="copy-btn" onclick="linkKopyala()">LINKI KOPYALA</button>'+
+            '</div>'+
+        '</div>'+
+
+        '<div class="panel" id="panelListe">'+
+            '<button class="gbtn" onclick="listeYukle()" style="margin-bottom:12px;">&#128260; Listeyi Yenile</button>'+
+            '<div id="kullaniciListesi"><p style="font-size:12px;color:#999;text-align:center;">Yenile\'ye basin</p></div>'+
+        '</div>'+
+
+        '<div class="panel" id="panelSistem">'+
+            '<div class="sfg"><label class="sfl">YENI SISTEM ADI</label>'+
+            '<input id="yeniSistemAdi" class="sfi" type="text" maxlength="15" placeholder="orn: Hisarkent"></div>'+
+            '<button class="gbtn" onclick="sistemAdiDegistir()">&#128190; Kaydet</button>'+
+        '</div>'+
+
+        '<div class="msg" id="panelMsg" style="margin-top:12px;"></div>'+
+        '</div>';
+}
+
+function tabSec(hangisi){
+    ['davet','liste','sistem'].forEach(function(t){
+        R('tab'+t.charAt(0).toUpperCase()+t.slice(1)).classList.toggle('active', t===hangisi);
+        R('panel'+t.charAt(0).toUpperCase()+t.slice(1)).classList.toggle('active', t===hangisi);
+    });
+}
+
+function showPanelMsg(txt, isErr){
+    var el = R('panelMsg');
+    el.textContent = txt;
+    el.className = 'msg ' + (isErr?'err':'ok');
+    el.style.display = 'block';
+    setTimeout(function(){ el.style.display='none'; }, 4000);
+}
+
+// ----------------------------------------------------------------
+// Admin komut gönderme yardımcı fonksiyonu — her komut kendi
+// benzersiz reqId'siyle gönderilir, yanıt o reqId'nin topic'inden
+// dinlenir (böylece birden fazla istek çakışmaz).
+// ----------------------------------------------------------------
+function adminKomutGonder(cmd, ekstraAlanlar, callback){
+    var reqId = 'r'+Date.now()+Math.random().toString(36).substring(2,6);
+    var yanitTopic = _adminYanitPfx + reqId;
+
+    var zamanAsimi = setTimeout(function(){
+        callback({ok:false, mesaj:'Yanit alinamadi (zaman asimi).'});
+    }, 8000);
+
+    _mqCl.subscribe(yanitTopic, {qos:1}, function(err){
+        if(err){ clearTimeout(zamanAsimi); callback({ok:false, mesaj:'Abonelik hatasi.'}); return; }
+
+        var paket = Object.assign({cmd:cmd, sifre:_sifre, reqId:reqId}, ekstraAlanlar||{});
+        _mqCl.publish(_adminTopic, JSON.stringify(paket), {qos:1});
+
+        var dinleyici = function(topic, payload){
+            if(topic !== yanitTopic) return;
+            clearTimeout(zamanAsimi);
+            _mqCl.removeListener('message', dinleyici);
+            try{
+                callback(JSON.parse(payload.toString()));
+            }catch(e){
+                callback({ok:false, mesaj:'Gecersiz yanit.'});
+            }
+        };
+        _mqCl.on('message', dinleyici);
+    });
+}
+
+var _sonInvLink = '';
+
+function davetGonder(){
+    var slot = parseInt(R('davetSlot').value, 10);
+    if(isNaN(slot) || slot<0 || slot>79){
+        showPanelMsg('Gecerli bir slot numarasi girin (0-79)', true);
+        return;
+    }
+    showPanelMsg('Davetiye olusturuluyor...', false);
+    adminKomutGonder('davet_olustur', {slot:slot}, function(d){
+        if(d.ok){
+            _sonInvLink = d.invLink;
+            R('invLink').textContent = d.invLink;
+            R('invKod').textContent = d.kod;
+            R('invResult').classList.add('show');
+            showPanelMsg('Davetiye olusturuldu!', false);
+        } else {
+            showPanelMsg(d.mesaj || 'Hata olustu.', true);
+        }
+    });
+}
+
+function linkKopyala(){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(_sonInvLink).then(function(){
+            showPanelMsg('Link kopyalandi!', false);
+        });
+    }
+}
+
+function listeYukle(){
+    R('kullaniciListesi').innerHTML = '<p style="font-size:12px;color:#999;text-align:center;">Yukleniyor...</p>';
+    adminKomutGonder('liste', {}, function(d){
+        if(!d.ok){
+            R('kullaniciListesi').innerHTML = '<p style="font-size:12px;color:#c62828;text-align:center;">'+esc(d.mesaj||'Hata')+'</p>';
+            return;
+        }
+        if(!d.kullanicilar || d.kullanicilar.length===0){
+            R('kullaniciListesi').innerHTML = '<p style="font-size:12px;color:#999;text-align:center;">Kayitli kullanici yok</p>';
+            return;
+        }
+        var h = '';
+        d.kullanicilar.forEach(function(u){
+            h += '<div class="kart">'+
+                 '<div><div class="kad">'+esc(u.ad)+'</div><div class="ktel">+90'+esc(u.tel)+' — Slot #'+u.slot+'</div></div>'+
+                 '<button class="ksil" onclick="kullaniciSil('+u.slot+')">Sil</button>'+
+                 '</div>';
+        });
+        R('kullaniciListesi').innerHTML = h;
+    });
+}
+
+function kullaniciSil(slot){
+    if(!confirm('Slot #'+slot+' silinsin mi?')) return;
+    showPanelMsg('Siliniyor...', false);
+    adminKomutGonder('sil', {slot:slot}, function(d){
+        if(d.ok){
+            showPanelMsg('Kullanici silindi.', false);
+            listeYukle();
+        } else {
+            showPanelMsg(d.mesaj || 'Hata olustu.', true);
+        }
+    });
+}
+
+function sistemAdiDegistir(){
+    var ad = R('yeniSistemAdi').value.trim();
+    if(ad.length<1){
+        showPanelMsg('Bos olamaz.', true);
+        return;
+    }
+    showPanelMsg('Kaydediliyor...', false);
+    adminKomutGonder('sistem_adi', {ad:ad}, function(d){
+        if(d.ok){
+            showPanelMsg('Sistem adi guncellendi!', false);
+        } else {
+            showPanelMsg(d.mesaj || 'Hata olustu.', true);
+        }
+    });
+}
+</script>
+</body>
+</html>
