@@ -241,35 +241,46 @@ function mqttBaglan(onHazir){
 }
 
 // ================================================================
-// YENİ: YETKİ KALDIRMA EKRANI VE TEMİZLİK
+// KALICI YETKİ KALDIRMA (BLACKLIST) MEKANİZMASI
 // ================================================================
-function renderYetkiKaldirildi(sistemAdi){
-    // 1. VERİLERİ ACIMASIZCA SİL
-    var s = _sistemler[_aktifIndex];
-    if(s){
-        localStorage.removeItem(lsKey('secret', s.chipId, s.slot));
-        localStorage.removeItem(lsKey('sid', s.chipId, s.slot));
-        var liste = sistemListesiOku();
-        liste = liste.filter(function(item){
-            return !(item.chipId === s.chipId && item.slot === s.slot);
-        });
-        localStorage.setItem('kapi_sistem_listesi', JSON.stringify(liste));
-    }
-    // Cihaz kimliğini de sil ki tamamen yabancı bir cihaz gibi davransın
-    localStorage.removeItem('did');
 
-    // 2. MQTT BAĞLANTISINI KOPAR
-    if(_mqCl){
-        try{ _mqCl.end(true); }catch(e){}
-        _mqCl = null; _conn = false;
-    }
+// 1. Bir sistem/slot için yasaklı mı kontrol et
+function isRevoked(chipId, slot) {
+    try {
+        var data = localStorage.getItem('kapi_revoked_' + chipId + '_' + slot);
+        return data ? JSON.parse(data) : null;
+    } catch(e) { return null; }
+}
 
-    // 3. PENCEREYİ KAPATMAYI DENE (Tarayıcı izin verirse kapanır)
-    try { window.close(); } catch(e) {}
+// 2. Bir sistemi kalıcı olarak yasakla ve benzersiz kod üret
+function setRevoked(chipId, slot, did, sistemAdi) {
+    // Device ID'nin ilk 8 karakteri + rastgele 4 karakter = Benzersiz Doğrulama Kodu
+    var code = (did.substring(0, 8) + Math.random().toString(36).substring(2, 6)).toUpperCase();
+    var data = { 
+        did: did, 
+        sistem: sistemAdi || 'Bilinmeyen Sistem',
+        code: code, 
+        time: Date.now() 
+    };
+    localStorage.setItem('kapi_revoked_' + chipId + '_' + slot, JSON.stringify(data));
+    
+    // Aktif oturum verilerini de temizle ki otomatik bağlanmaya çalışmasın
+    localStorage.removeItem(lsKey('secret', chipId, slot));
+    localStorage.removeItem(lsKey('sid', chipId, slot));
+    
+    return data;
+}
 
-    // 4. TARAYICI KAPATMAYA İZİN VERMEZSE (Ki genelde vermez):
-    // Sayfanın TÜM HTML'ini sil ve yerine ÖLÜ bir ekran yaz.
-    // Geri butonu, TAMAM butonu veya tıklanacak HİÇBİR ŞEY YOK.
+// 3. Profesyonel, QR Kodlu ve Butonsuz Yasaklama Ekranı
+function renderKaliciYetkiEkrani(sistemAdi, revokeData) {
+    // MQTT bağlantısını kesin
+    if(_mqCl) { try{ _mqCl.end(true); }catch(e){} _mqCl = null; _conn = false; }
+
+    // QR Kod için veri: "YETKI_KALDIRILDI:<KOD>:<SISTEM>"
+    var qrData = encodeURIComponent("YETKI_KALDIRILDI:" + revokeData.code + ":" + revokeData.sistem);
+    var qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + qrData;
+
+    // Tüm body içeriğini değiştir. Geri dönüş veya buton YOK.
     document.open();
     document.write(`
         <!DOCTYPE html>
@@ -277,62 +288,97 @@ function renderYetkiKaldirildi(sistemAdi){
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-            <title>Erişim Kaldırıldı</title>
+            <title>Erişim Kalıcı Olarak Kaldırıldı</title>
             <style>
                 body { 
-                    margin:0; padding:0; background:#111; color:#fff; font-family:Arial, sans-serif; 
+                    margin:0; padding:0; background:#0f172a; color:#e2e8f0; font-family:Arial, sans-serif; 
                     display:flex; flex-direction:column; justify-content:center; align-items:center; 
-                    height:100vh; text-align:center; padding:30px; 
+                    min-height:100vh; text-align:center; padding:30px; 
                 }
-                h1 { color:#f44336; font-size:26px; margin-bottom:20px; }
-                p { font-size:16px; color:#ccc; line-height:1.6; margin-bottom:10px; }
                 .icon { font-size:64px; margin-bottom:20px; }
+                h1 { color:#ef4444; font-size:24px; margin-bottom:10px; font-weight:700; }
+                p { font-size:15px; color:#94a3b8; line-height:1.6; margin-bottom:20px; max-width:320px; }
+                .code-box { 
+                    background:#1e293b; border:1px solid #334155; border-radius:12px; 
+                    padding:15px; margin:20px 0; width:100%; max-width:300px; 
+                }
+                .code-label { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:5px; }
+                .code-value { font-size:28px; font-weight:700; color:#f8fafc; letter-spacing:3px; font-family:monospace; }
+                .qr-box { margin-top:20px; padding:10px; background:#fff; border-radius:12px; display:inline-block; }
+                .qr-box img { display:block; width:150px; height:150px; }
+                .footer { margin-top:30px; font-size:12px; color:#475569; border-top:1px solid #1e293b; padding-top:15px; width:100%; max-width:300px; }
             </style>
         </head>
         <body>
-            <div class="icon">&#128683;</div>
+            <div class="icon">&#128274;</div>
             <h1>ERİŞİM KALDIRILDI</h1>
-            <p>Artık bu sitenin sakini değilsiniz.</p>
-            <p style="margin-top:40px; font-size:15px; color:#888; border-top:1px solid #333; padding-top:20px;">
-                Lütfen bu uygulama simgesini<br>telefonunuzun ana ekranından silin.
-            </p>
+            <p><strong>` + esc(sistemAdi) + `</strong> için kapı açma yetkiniz sistem yöneticisi tarafından kalıcı olarak sonlandırılmıştır.</p>
+            
+            <div class="code-box">
+                <div class="code-label">Doğrulama Kodunuz</div>
+                <div class="code-value">` + revokeData.code + `</div>
+            </div>
+
+            <div class="qr-box">
+                <img src="` + qrUrl + `" alt="Doğrulama QR Kodu">
+           3</div>
+
+            <div class="footer">
+                Bir hata olduğunu düşünüyorsanız, yukarıdaki kodu veya QR kodu site yöneticinize gösteriniz.<br><br>
+                <em>Bu uygulama simgesini cihazınızdan silebilirsiniz.</em>
+            </div>
         </body>
         </html>
     `);
     document.close();
-
-    // 5. EKSTRA ÖNLEM: 3 saniye sonra tamamen boş bir sayfaya (about:blank) atmayı dene
-    setTimeout(function(){
-        try { window.location.replace("about:blank"); } catch(e) {}
-    }, 3000);
 }
 
 // ================================================================
 // ANA BAŞLANGIÇ
 // ================================================================
 function baslat(){
-    var INV_LINK=gP('l');
-    var SLOT    =gP('s');
-    var SECRET  =gP('k');
-    var SLOT_INT=parseInt(SLOT,10);
+    var INV_LINK = gP('l');
+    var SLOT     = gP('s');
+    var SECRET   = gP('k');
+    var SLOT_INT = parseInt(SLOT, 10);
+    var chipId   = gP('c') || '';
 
-    if(INV_LINK.length===16){
+    // 1. ÖNCE YASAKLAMA KONTROLÜ YAP (En kritik adım)
+    if(chipId && SLOT_INT) {
+        var revoked = isRevoked(chipId, SLOT_INT);
+        if(revoked) {
+            // Kullanıcı yasaklıysa, başka hiçbir şey yapma, direkt o ekranı bas.
+            renderKaliciYetkiEkrani(revoked.sistem, revoked);
+            return; 
+        }
+    }
+
+    // 2. Normal akış
+    if(INV_LINK.length === 16){
         renderKayit(INV_LINK);
-    } else if(SLOT.length>0&&SECRET.length>0&&!isNaN(SLOT_INT)){
-        var chipId=gP('c')||'';
+    } else if(SLOT.length > 0 && SECRET.length > 0 && !isNaN(SLOT_INT)){
         if(!chipId){
             renderHata('Sistem bilgisi eksik. Lutfen davetiye linkinizi tekrar kullanin.');
             return;
         }
-        var mevcutSecret=localStorage.getItem(lsKey('secret',chipId,SLOT_INT));
+        var mevcutSecret = localStorage.getItem(lsKey('secret', chipId, SLOT_INT));
         if(!mevcutSecret){
-            sistemKaydet(chipId,SLOT_INT,SECRET,localStorage.getItem(lsKey('sid',chipId,SLOT_INT))||'Kapi Sistemi');
+            sistemKaydet(chipId, SLOT_INT, SECRET, localStorage.getItem(lsKey('sid', chipId, SLOT_INT)) || 'Kapi Sistemi');
         }
-        renderSistemGezgini(chipId,SLOT_INT);
+        renderSistemGezgini(chipId, SLOT_INT);
     } else {
-        var kayitliSistemler=tumSistemleriGetir();
-        if(kayitliSistemler.length>0){
-            renderSistemGezgini(kayitliSistemler[0].chipId,kayitliSistemler[0].slot);
+        var kayitliSistemler = tumSistemleriGetir();
+        if(kayitliSistemler.length > 0){
+            // Çoklu sistemde de yasaklı olanı filtrele
+            var gecerliSistemler = kayitliSistemler.filter(function(s){
+                return !isRevoked(s.chipId, s.slot);
+            });
+            
+            if(gecerliSistemler.length > 0) {
+                renderSistemGezgini(gecerliSistemler[0].chipId, gecerliSistemler[0].slot);
+            } else {
+                renderHata('Kayitli ve yetkili sistem bulunamadi.');
+            }
         } else {
             renderTest();
         }
@@ -661,26 +707,32 @@ function mqttBaglanButon(sistem){
                 return;
             }
 
-            if(topic===_yanit){
+                        if(topic === _yanit){
                 try{
-                    var d2=JSON.parse(payload.toString());
-                    if(d2.komut==='kapi_acildi'){
+                    var d2 = JSON.parse(payload.toString());
+                    if(d2.komut === 'kapi_acildi'){
                         kapiAcildiSesi();
                         setStat('s-ok','&#9989; Kapi Acildi!');
-                        R('acBtn').innerHTML='&#9989;';
+                        R('acBtn').innerHTML = '&#9989;';
                         setTimeout(function(){
                             setStat('s-conn','&#9989; Hazir — Butona basin');
-                            R('acBtn').innerHTML='&#128275;';
+                            R('acBtn').innerHTML = '&#128275;';
                             btnOn(true);
-                        },2500);
-                    } else if(d2.ok === false && (d2.kod === 'USER_DELETED' || d2.kod === 'SECRET_MISMATCH')) {
-                        // KRİTİK DEĞİŞİKLİK: Yetki kaldırma prosedürünü başlat
-                        renderYetkiKaldirildi(_sistemler[_aktifIndex] ? _sistemler[_aktifIndex].sid : 'bu site');
-                    } else {
+                        }, 2500);
+                    } 
+                    else if(d2.ok === false && (d2.kod === 'USER_DELETED' || d2.kod === 'SECRET_MISMATCH')) {
+                        // KRİTİK: Anında kalıcı karalisteye al ve profesyonel ekranı bas
+                        var s = _sistemler[_aktifIndex];
+                        if(s) {
+                            var revData = setRevoked(s.chipId, s.slot, _did, s.sid);
+                            renderKaliciYetkiEkrani(s.sid, revData);
+                        }
+                    } 
+                    else {
                         setStat('s-err','&#10060; ' + (d2.mesaj || 'Islem tamamlanamadi'));
                         btnOn(true);
                     }
-                }catch(e){
+                } catch(e) {
                     setStat('s-err','&#10060; Beklenmeyen yanit');
                     btnOn(true);
                 }
