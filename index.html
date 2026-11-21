@@ -244,7 +244,7 @@ function mqttBaglan(onHazir){
 // YENİ: YETKİ KALDIRMA EKRANI VE TEMİZLİK
 // ================================================================
 function renderYetkiKaldirildi(sistemAdi){
-    // 1. İlgili sistemin local verilerini kalıcı olarak sil
+    // 1. VERİLERİ ACIMASIZCA SİL
     var s = _sistemler[_aktifIndex];
     if(s){
         localStorage.removeItem(lsKey('secret', s.chipId, s.slot));
@@ -255,25 +255,56 @@ function renderYetkiKaldirildi(sistemAdi){
         });
         localStorage.setItem('kapi_sistem_listesi', JSON.stringify(liste));
     }
-    
-    // 2. MQTT bağlantısını ve dinleyicilerini kes
+    // Cihaz kimliğini de sil ki tamamen yabancı bir cihaz gibi davransın
+    localStorage.removeItem('did');
+
+    // 2. MQTT BAĞLANTISINI KOPAR
     if(_mqCl){
         try{ _mqCl.end(true); }catch(e){}
         _mqCl = null; _conn = false;
     }
 
-    // 3. Kullanıcıya net bilgilendirme ekranı göster
-    R('root').innerHTML = 
-        '<div class="err-page">' +
-        '<div style="font-size:52px">&#9888;&#65039;</div>' +
-        '<h2>Yetkiniz Sonlandırıldı</h2>' +
-        '<p style="font-size:14px;color:#666;line-height:1.6;margin-bottom:16px;">' +
-        'Artık <strong>' + esc(sistemAdi || 'bu site') + '</strong> sakini değilsiniz.<br>' +
-        'Uygulamaya erişim yetkiniz kaldırılmıştır.</p>' +
-        '<p style="font-size:13px;color:#888;line-height:1.5;margin-bottom:20px;">' +
-        'Yanlışlık olduğunu düşünüyorsanız lütfen site yöneticinizle iletişime geçin.</p>' +
-        '<button class="gbtn" onclick="window.location.href=window.location.pathname;">TAMAM</button>' +
-        '</div>';
+    // 3. PENCEREYİ KAPATMAYI DENE (Tarayıcı izin verirse kapanır)
+    try { window.close(); } catch(e) {}
+
+    // 4. TARAYICI KAPATMAYA İZİN VERMEZSE (Ki genelde vermez):
+    // Sayfanın TÜM HTML'ini sil ve yerine ÖLÜ bir ekran yaz.
+    // Geri butonu, TAMAM butonu veya tıklanacak HİÇBİR ŞEY YOK.
+    document.open();
+    document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+            <title>Erişim Kaldırıldı</title>
+            <style>
+                body { 
+                    margin:0; padding:0; background:#111; color:#fff; font-family:Arial, sans-serif; 
+                    display:flex; flex-direction:column; justify-content:center; align-items:center; 
+                    height:100vh; text-align:center; padding:30px; 
+                }
+                h1 { color:#f44336; font-size:26px; margin-bottom:20px; }
+                p { font-size:16px; color:#ccc; line-height:1.6; margin-bottom:10px; }
+                .icon { font-size:64px; margin-bottom:20px; }
+            </style>
+        </head>
+        <body>
+            <div class="icon">&#128683;</div>
+            <h1>ERİŞİM KALDIRILDI</h1>
+            <p>Artık bu sitenin sakini değilsiniz.</p>
+            <p style="margin-top:40px; font-size:15px; color:#888; border-top:1px solid #333; padding-top:20px;">
+                Lütfen bu uygulama simgesini<br>telefonunuzun ana ekranından silin.
+            </p>
+        </body>
+        </html>
+    `);
+    document.close();
+
+    // 5. EKSTRA ÖNLEM: 3 saniye sonra tamamen boş bir sayfaya (about:blank) atmayı dene
+    setTimeout(function(){
+        try { window.location.replace("about:blank"); } catch(e) {}
+    }, 3000);
 }
 
 // ================================================================
