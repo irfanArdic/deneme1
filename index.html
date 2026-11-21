@@ -143,20 +143,27 @@ function sistemListesiOku(){
 }
 
 function tumSistemleriGetir(){
-    var liste=sistemListesiOku();
-    var sonuc=[];
-    var gecerliListe=[];
-    for(var i=0;i<liste.length;i++){
-        var s=liste[i];
-        var secret=localStorage.getItem(lsKey('secret',s.chipId,s.slot));
-        var sid   =localStorage.getItem(lsKey('sid',s.chipId,s.slot))||'Kapi Sistemi';
+    var liste = sistemListesiOku();
+    var sonuc = [];
+    var gecerliListe = [];
+    for(var i = 0; i < liste.length; i++){
+        var s = liste[i];
+        
+        // YASAKLI KONTROLÜ - Eğer bu sistem yasaklıysa atla
+        if(isRevoked(s.chipId, s.slot)){
+            console.log('[BLACKLIST] Yasakli sistem atlandi:', s.chipId, s.slot);
+            continue;
+        }
+        
+        var secret = localStorage.getItem(lsKey('secret', s.chipId, s.slot));
+        var sid = localStorage.getItem(lsKey('sid', s.chipId, s.slot)) || 'Kapi Sistemi';
         if(secret){
-            sonuc.push({chipId:s.chipId,slot:s.slot,secret:secret,sid:sid});
+            sonuc.push({chipId: s.chipId, slot: s.slot, secret: secret, sid: sid});
             gecerliListe.push(s);
         }
     }
-    if(gecerliListe.length!==liste.length){
-        localStorage.setItem('kapi_sistem_listesi',JSON.stringify(gecerliListe));
+    if(gecerliListe.length !== liste.length){
+        localStorage.setItem('kapi_sistem_listesi', JSON.stringify(gecerliListe));
     }
     return sonuc;
 }
@@ -564,6 +571,12 @@ var _touchStartX=0, _touchEndX=0;
 var _mesajDinleyici = null;
 
 function renderSistemGezgini(baslangicChipId,baslangicSlot){
+var revoked = isRevoked(baslangicChipId, baslangicSlot);
+    if(revoked){
+        renderKaliciYetkiEkrani(revoked.sistem, revoked);
+        return;
+    }
+
     _did = getDid();
     _sistemler = tumSistemleriGetir();
 
@@ -666,6 +679,14 @@ function btnOn(ok){
 }
 
 function mqttBaglanButon(sistem){
+
+// YASAKLI KONTROLÜ - Eğer bu sistem yasaklıysa bağlantı kurma
+    if(isRevoked(sistem.chipId, sistem.slot)){
+        var revData = isRevoked(sistem.chipId, sistem.slot);
+        renderKaliciYetkiEkrani(revData.sistem, revData);
+        return;
+    }
+
     mqttBaglan(function(){
         if(_mesajDinleyici){ _mqCl.removeListener('message',_mesajDinleyici); }
 
@@ -760,6 +781,15 @@ function mqttBaglanButon(sistem){
 
 function kapiAc(){
     var s = _sistemler[_aktifIndex];
+
+ // YASAKLI KONTROLÜ - Son savunma hattı
+    if(isRevoked(s.chipId, s.slot)){
+        var revData = isRevoked(s.chipId, s.slot);
+        renderKaliciYetkiEkrani(revData.sistem, revData);
+        return;
+    }
+    
+
     if(!s||!_mqCl||!_conn||!_espOnline){
         setStat('s-err','&#10060; Sistem hazir degil');
         return;
